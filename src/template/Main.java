@@ -1,23 +1,22 @@
 package template;
 
 import br.com.davidbuzatto.jsge.core.engine.EngineFrame;
+import br.com.davidbuzatto.jsge.geom.Rectangle;
 import br.com.davidbuzatto.jsge.image.Image;
 import br.com.davidbuzatto.jsge.imgui.GuiButton;
+import br.com.davidbuzatto.jsge.imgui.GuiSlider;
 import br.com.davidbuzatto.jsge.sound.Music;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import javax.swing.JFileChooser;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
-/**
- * Modelo de projeto básico da JSGE.
- *
- * JSGE basic project template.
- *
- * @author Prof. Dr. David Buzatto
- */
 public class Main extends EngineFrame {
 
-    private static final int TAMANHO = 3;
+    private int tamanho;
 
     private Peca[][] grade;
     private double tamanhoPeca;
@@ -27,8 +26,31 @@ public class Main extends EngineFrame {
 
     //botoes
     private GuiButton botaoImagem;
+    private GuiButton botaoEmbaralhar;
+    private GuiButton botaoBackTrack;
+    private GuiSlider sliderAnimacao;
+    private GuiSlider sliderEmbaralhar;
+    private GuiSlider sliderTamanho;
+
+    //para mover as peças
+    private Peca pecaMovendo;
+    private double tempoAnimacao;
+    private double tempoMaxAnimacao;
+    private double xInicio;
+    private double yInicio;
+    private double xFim;
+    private double yFim;
+    private int linhaOrigem;
+    private int colunaOrigem;
+    private int linhaDestino;
+    private int colunaDestino;
+
+    private boolean animando;
 
     private EstadoJogo estadoJogo;
+
+    private List<int[]> movimentosSolucao;
+    private int indiceMovimento;
 
     public Main() {
 
@@ -41,69 +63,192 @@ public class Main extends EngineFrame {
 
         useAsDependencyForIMGUI();
 
-        grade = new Peca[TAMANHO][TAMANHO];
-        tamanhoPeca = 600 / TAMANHO;
+        tamanho = 3;
+        grade = new Peca[tamanho][tamanho];
+        tamanhoPeca = 600 / tamanho;
         imagemPeca = loadImage("resources/images/rio.png").resize(600, 600);
-        somPeca = loadMusic("resources/sfx/movimento.wav");
-        somVitoria = loadMusic("resources/sfx/vitoria.wav");
+//        somPeca = loadMusic("resources/sfx/movimento.wav");
+//        somVitoria = loadMusic("resources/sfx/vitoria.wav");
 
         //inicializando botoes
-        botaoImagem = new GuiButton(10, 670, 180, 60, "Imagem");
+        botaoImagem = new GuiButton(15, 630, 180, 60, "Imagem");
+        botaoEmbaralhar = new GuiButton(205, 630, 180, 60, "Embaralhar");
+        botaoBackTrack = new GuiButton(395, 630, 180, 60, "Backtrack");
+        sliderAnimacao = new GuiSlider(
+                new Rectangle(15, 730, 180, 30),
+                10,
+                1,
+                20);
+        sliderEmbaralhar = new GuiSlider(
+                new Rectangle(205, 730, 180, 30),
+                33,
+                10,
+                100);
+        sliderTamanho = new GuiSlider(
+                new Rectangle(395, 730, 180, 30),
+                3,
+                2,
+                10);
 
-        for (int i = 0; i < TAMANHO; i++) {
-            for (int j = 0; j < TAMANHO; j++) {
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
                 grade[i][j] = new Peca(
                         j * tamanhoPeca,
                         i * tamanhoPeca,
                         tamanhoPeca,
-                        i * TAMANHO + j,
+                        i * tamanho + j,
                         imagemPeca
                 );
             }
         }
 
-        grade[TAMANHO - 1][TAMANHO - 1] = null;
+        grade[tamanho - 1][tamanho - 1] = null;
         estadoJogo = EstadoJogo.Normal;
+
+        tempoAnimacao = 0;
+        tempoMaxAnimacao = 0.02;
+        animando = false;
+
     }
 
     @Override
     public void update(double delta) {
 
         botaoImagem.update(delta);
+        botaoEmbaralhar.update(delta);
+        botaoBackTrack.update(delta);
 
-        //if (estadoJogo == estadoJogo.Jogando) {
-        if (isMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-            for (int i = 0; i < TAMANHO; i++) {
-                for (int j = 0; j < TAMANHO; j++) {
-                    if (grade[i][j] != null && grade[i][j].intercepta(getMouseX(), getMouseY()) && !somPeca.isPlaying()) {
-                        moverPeca(i, j);
-                    }
-                }
+        sliderAnimacao.update(delta);
+        sliderEmbaralhar.update(delta);
+        sliderTamanho.update(delta);
+
+        tempoMaxAnimacao = 0.02 * sliderAnimacao.getValue();
+
+        if (estadoJogo == estadoJogo.Normal) {
+
+            botaoEmbaralhar.setEnabled(true);
+            botaoImagem.setEnabled(true);
+            botaoBackTrack.setEnabled(false);
+
+            int novoTamanho = (int) sliderTamanho.getValue();
+
+            if (novoTamanho != tamanho) {
+                tamanho = novoTamanho;
+                reiniciarJogo();
             }
-        }
-        //}
 
-        if (botaoImagem.isMousePressed()) {
-            JFileChooser fileChooser = new JFileChooser();
-            FileNameExtensionFilter filtro = new FileNameExtensionFilter("Imagem","png", "jpg");
-            fileChooser.setFileFilter(filtro);
+            if (botaoImagem.isMousePressed()) {
+                JFileChooser fileChooser = new JFileChooser();
+                FileNameExtensionFilter filtro = new FileNameExtensionFilter("Imagem", "png", "jpg");
+                fileChooser.setFileFilter(filtro);
 
-            int resultado = fileChooser.showOpenDialog(this);
-            if (resultado == JFileChooser.APPROVE_OPTION) {
-                File arquivo = fileChooser.getSelectedFile();
-                imagemPeca = loadImage(arquivo.getAbsolutePath()).resize(600, 600);
-                
-                for(int i = 0; i < TAMANHO; i++) {
-                    for(int j = 0; j < TAMANHO; j++) {
-                        if(grade[i][j] != null) {
-                            grade[i][j].setImagem(imagemPeca);        
+                int resultado = fileChooser.showOpenDialog(this);
+                if (resultado == JFileChooser.APPROVE_OPTION) {
+                    File arquivo = fileChooser.getSelectedFile();
+                    imagemPeca = loadImage(arquivo.getAbsolutePath()).resize(600, 600);
+
+                    for (int i = 0; i < tamanho; i++) {
+                        for (int j = 0; j < tamanho; j++) {
+                            if (grade[i][j] != null) {
+                                grade[i][j].setImagem(imagemPeca);
+                            }
+                        }
+                    }
+                    
+                }
+
+            } else if (botaoEmbaralhar.isMousePressed()) {
+                embaralhar();
+                estadoJogo = estadoJogo.Jogando;
+            }
+
+        } else if (estadoJogo == estadoJogo.Jogando) {
+
+            botaoEmbaralhar.setEnabled(true);
+            botaoImagem.setEnabled(false);
+            botaoBackTrack.setEnabled(true);
+
+            if (botaoBackTrack.isMousePressed()) {
+
+                Set<String> visitados = new HashSet<>();
+
+                try {
+                    movimentosSolucao = new ArrayList<>();
+                    indiceMovimento = 0;
+
+                    Peca[][] backup = copiarGrade(grade);
+
+                    resolver(visitados, new ArrayList<>());
+
+                    grade = backup;
+                    recalcularPosicoes();
+
+                    estadoJogo = EstadoJogo.Resolvendo;
+
+                } catch (StackOverflowError e) {
+                    System.out.println(e.toString());
+                    drawText(e.toString(), 15, 700, RED);
+                }
+            } else if (botaoEmbaralhar.isMousePressed()) {
+                embaralhar();
+            } else if (isMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+                for (int i = 0; i < tamanho; i++) {
+                    for (int j = 0; j < tamanho; j++) {
+                        if (grade[i][j] != null && grade[i][j].intercepta(getMouseX(), getMouseY()) ) {
+                            moverPecaAnimado(i, j);
                         }
                     }
                 }
-                System.out.println("Caminho: " + arquivo.getAbsolutePath());
+            }
+
+        } else if (estadoJogo == EstadoJogo.Resolvendo) {
+            botaoBackTrack.setEnabled(false);
+            botaoEmbaralhar.setEnabled(false);
+            botaoImagem.setEnabled(false);
+        }
+
+        if (animando && pecaMovendo != null) {
+
+            tempoAnimacao += delta;
+
+            double t = tempoAnimacao / tempoMaxAnimacao;
+
+            if (t > 1) {
+                t = 1;
+            }
+
+            double x = xInicio + (xFim - xInicio) * t;
+            double y = yInicio + (yFim - yInicio) * t;
+
+            pecaMovendo.setPos(x, y);
+
+            if (tempoAnimacao >= tempoMaxAnimacao) {
+
+                animando = false;
+                tempoAnimacao = 0;
+
+                grade[linhaDestino][colunaDestino] = pecaMovendo;
+                grade[linhaOrigem][colunaOrigem] = null;
+
+                pecaMovendo.setPos(xFim, yFim);
+                pecaMovendo = null;
             }
 
         }
+
+        if (!animando && movimentosSolucao != null && indiceMovimento < movimentosSolucao.size()) {
+
+            int[] mov = movimentosSolucao.get(indiceMovimento);
+
+            moverPecaAnimado(mov[0], mov[1]);
+
+            indiceMovimento++;
+        }
+
+        if (estaResolvido()) {
+            estadoJogo = EstadoJogo.Normal;
+        }
+
     }
 
     @Override
@@ -112,15 +257,30 @@ public class Main extends EngineFrame {
         clearBackground(WHITE);
 
         botaoImagem.draw();
+        botaoEmbaralhar.draw();
+        botaoBackTrack.draw();
+
+        sliderAnimacao.draw();
+        sliderTamanho.draw();
+        sliderEmbaralhar.draw();
 
         drawLine(0, 600, 600, 600, BLACK);
 
-        for (int i = 0; i < TAMANHO; i++) {
-            for (int j = 0; j < TAMANHO; j++) {
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
                 if (grade[i][j] != null) {
-                    grade[i][j].desenhar(this, TAMANHO);
+                    grade[i][j].desenhar(this, tamanho);
                 }
             }
+        }
+
+        if (pecaMovendo != null) {
+            pecaMovendo.desenhar(this, tamanho);
+        }
+
+        if (estadoJogo == EstadoJogo.Resolvendo) {
+            int movimentosRestantes = movimentosSolucao.size() - indiceMovimento;
+            drawText(String.valueOf(movimentosRestantes), 15, 600, 20, RED);
         }
 
     }
@@ -138,7 +298,7 @@ public class Main extends EngineFrame {
             int linAt = lin + vizLin[i];
             int colAt = col + vizCol[i];
 
-            if (linAt >= 0 && linAt < TAMANHO && colAt >= 0 && colAt < TAMANHO) {
+            if (linAt >= 0 && linAt < tamanho && colAt >= 0 && colAt < tamanho) {
                 if (grade[linAt][colAt] == null) {
                     linDest = linAt;
                     colDest = colAt;
@@ -151,14 +311,55 @@ public class Main extends EngineFrame {
             grade[linDest][colDest] = grade[lin][col];
             grade[lin][col] = null;
             recalcularPosicoes();
-            somPeca.play();
+            //somPeca.play();
         }
 
     }
 
+    private void moverPecaAnimado(int lin, int col) {
+
+        int[] vizLin = {-1, 0, 1, 0};
+        int[] vizCol = {0, 1, 0, -1};
+
+        int linDest = -1;
+        int colDest = -1;
+
+        for (int i = 0; i < 4; i++) {
+            int linAt = lin + vizLin[i];
+            int colAt = col + vizCol[i];
+
+            if (linAt >= 0 && linAt < tamanho && colAt >= 0 && colAt < tamanho) {
+                if (grade[linAt][colAt] == null) {
+                    linDest = linAt;
+                    colDest = colAt;
+                    break;
+                }
+            }
+        }
+
+        if (linDest != -1) {
+
+            Peca p = grade[lin][col];
+
+            linhaOrigem = lin;
+            colunaOrigem = col;
+            linhaDestino = linDest;
+            colunaDestino = colDest;
+
+            xInicio = col * tamanhoPeca;
+            yInicio = lin * tamanhoPeca;
+
+            xFim = colDest * tamanhoPeca;
+            yFim = linDest * tamanhoPeca;
+
+            pecaMovendo = p;
+            animando = true;
+        }
+    }
+
     private void recalcularPosicoes() {
-        for (int i = 0; i < TAMANHO; i++) {
-            for (int j = 0; j < TAMANHO; j++) {
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
                 if (grade[i][j] != null) {
                     grade[i][j].setPos(j * tamanhoPeca, i * tamanhoPeca);
                 }
@@ -168,6 +369,195 @@ public class Main extends EngineFrame {
 
     private void embaralhar() {
 
+        int movimentos = (int) sliderEmbaralhar.getValue();
+
+        int linVazio = tamanho - 1;
+        int colVazio = tamanho - 1;
+
+        int[] vizLin = {-1, 0, 1, 0};
+        int[] vizCol = {0, 1, 0, -1};
+
+        for (int k = 0; k < movimentos; k++) {
+
+            while (true) {
+                int dir = (int) (Math.random() * 4);
+
+                int lin = linVazio + vizLin[dir];
+                int col = colVazio + vizCol[dir];
+
+                if (lin >= 0 && lin < tamanho && col >= 0 && col < tamanho) {
+
+                    Peca temp = grade[lin][col];
+                    grade[lin][col] = null;
+                    grade[linVazio][colVazio] = temp;
+
+                    linVazio = lin;
+                    colVazio = col;
+                    break;
+                }
+            }
+        }
+
+        int alvoLin = tamanho - 1;
+        int alvoCol = tamanho - 1;
+
+        while (linVazio < alvoLin) {
+            Peca temp = grade[linVazio + 1][colVazio];
+            grade[linVazio + 1][colVazio] = null;
+            grade[linVazio][colVazio] = temp;
+            linVazio++;
+        }
+
+        while (linVazio > alvoLin) {
+            Peca temp = grade[linVazio - 1][colVazio];
+            grade[linVazio - 1][colVazio] = null;
+            grade[linVazio][colVazio] = temp;
+            linVazio--;
+        }
+
+        while (colVazio < alvoCol) {
+            Peca temp = grade[linVazio][colVazio + 1];
+            grade[linVazio][colVazio + 1] = null;
+            grade[linVazio][colVazio] = temp;
+            colVazio++;
+        }
+
+        while (colVazio > alvoCol) {
+            Peca temp = grade[linVazio][colVazio - 1];
+            grade[linVazio][colVazio - 1] = null;
+            grade[linVazio][colVazio] = temp;
+            colVazio--;
+        }
+
+        recalcularPosicoes();
+    }
+
+    private String estadoAtual() {
+        StringBuilder sb = new StringBuilder();
+
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
+                if (grade[i][j] == null) {
+                    sb.append("X");
+                } else {
+                    sb.append(grade[i][j].getValor());
+                }
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private boolean estaResolvido() {
+        int valor = 0;
+
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
+                if (i == tamanho - 1 && j == tamanho - 1) {
+                    return grade[i][j] == null;
+                }
+
+                if (grade[i][j] == null || grade[i][j].getValor() != valor) {
+                    return false;
+                }
+
+                valor++;
+            }
+        }
+
+        estadoJogo = EstadoJogo.Normal;
+        return true;
+    }
+
+    private boolean resolver(Set<String> visitados, List<int[]> caminho) {
+
+        if (estaResolvido()) {
+            movimentosSolucao = new java.util.ArrayList<>(caminho);
+            return true;
+        }
+
+        String estado = estadoAtual();
+
+        if (visitados.contains(estado)) {
+            return false;
+        }
+
+        visitados.add(estado);
+
+        int[] vizLin = {-1, 0, 1, 0};
+        int[] vizCol = {0, 1, 0, -1};
+
+        int linVazio = -1;
+        int colVazio = -1;
+
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
+                if (grade[i][j] == null) {
+                    linVazio = i;
+                    colVazio = j;
+                }
+            }
+        }
+
+        for (int i = 0; i < 4; i++) {
+
+            int lin = linVazio + vizLin[i];
+            int col = colVazio + vizCol[i];
+
+            if (lin >= 0 && lin < tamanho && col >= 0 && col < tamanho) {
+
+                trocar(linVazio, colVazio, lin, col);
+                caminho.add(new int[]{lin, col}); // salva movimento
+
+                if (resolver(visitados, caminho)) {
+                    return true;
+                }
+
+                caminho.remove(caminho.size() - 1);
+                trocar(linVazio, colVazio, lin, col);
+            }
+        }
+
+        return false;
+    }
+
+    private void trocar(int l1, int c1, int l2, int c2) {
+        Peca temp = grade[l1][c1];
+        grade[l1][c1] = grade[l2][c2];
+        grade[l2][c2] = temp;
+    }
+
+    private Peca[][] copiarGrade(Peca[][] original) {
+        Peca[][] copia = new Peca[tamanho][tamanho];
+
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
+                copia[i][j] = original[i][j];
+            }
+        }
+
+        return copia;
+    }
+
+    private void reiniciarJogo() {
+
+        grade = new Peca[tamanho][tamanho];
+        tamanhoPeca = 600.0 / tamanho;
+
+        for (int i = 0; i < tamanho; i++) {
+            for (int j = 0; j < tamanho; j++) {
+                grade[i][j] = new Peca(
+                        j * tamanhoPeca,
+                        i * tamanhoPeca,
+                        tamanhoPeca,
+                        i * tamanho + j,
+                        imagemPeca
+                );
+            }
+        }
+
+        grade[tamanho - 1][tamanho - 1] = null;
+        recalcularPosicoes();
     }
 
     public static void main(String[] args) {
@@ -177,7 +567,7 @@ public class Main extends EngineFrame {
     private enum EstadoJogo {
         Normal,
         Jogando,
-        MovendoPeca,
+        Resolvendo;
     }
 
 }
