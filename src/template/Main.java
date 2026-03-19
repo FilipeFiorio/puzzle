@@ -6,6 +6,7 @@ import br.com.davidbuzatto.jsge.image.Image;
 import br.com.davidbuzatto.jsge.imgui.GuiButton;
 import br.com.davidbuzatto.jsge.imgui.GuiSlider;
 import br.com.davidbuzatto.jsge.sound.Music;
+import java.awt.Color;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -19,6 +20,7 @@ public class Main extends EngineFrame {
     private int tamanho;
 
     private Peca[][] grade;
+    private Peca[][] gradeBackup;
     private double tamanhoPeca;
     private Image imagemPeca;
     private Music somPeca;
@@ -26,10 +28,10 @@ public class Main extends EngineFrame {
 
     //botoes
     private GuiButton botaoImagem;
-    private GuiButton botaoEmbaralhar;
+    private GuiButton botaoComecar;
     private GuiButton botaoBackTrack;
+    private GuiButton botaoCancelar;
     private GuiSlider sliderAnimacao;
-    private GuiSlider sliderEmbaralhar;
     private GuiSlider sliderTamanho;
 
     //para mover as peças
@@ -51,6 +53,8 @@ public class Main extends EngineFrame {
 
     private List<int[]> movimentosSolucao;
     private int indiceMovimento;
+    private int contadorMovimentos;
+    private static final int LIMITE_MOVIMENTOS = 8000;
 
     public Main() {
 
@@ -72,18 +76,15 @@ public class Main extends EngineFrame {
 
         //inicializando botoes
         botaoImagem = new GuiButton(15, 630, 180, 60, "Imagem");
-        botaoEmbaralhar = new GuiButton(205, 630, 180, 60, "Embaralhar");
+        botaoComecar = new GuiButton(205, 630, 180, 60, "Comecar");
         botaoBackTrack = new GuiButton(395, 630, 180, 60, "Backtrack");
+        botaoCancelar = new GuiButton(205, 700, 180, 60, "Cancelar");
         sliderAnimacao = new GuiSlider(
                 new Rectangle(15, 730, 180, 30),
                 10,
                 1,
                 20);
-        sliderEmbaralhar = new GuiSlider(
-                new Rectangle(205, 730, 180, 30),
-                33,
-                10,
-                100);
+
         sliderTamanho = new GuiSlider(
                 new Rectangle(395, 730, 180, 30),
                 3,
@@ -104,6 +105,7 @@ public class Main extends EngineFrame {
 
         grade[tamanho - 1][tamanho - 1] = null;
         estadoJogo = EstadoJogo.Normal;
+        gradeBackup = grade;
 
         tempoAnimacao = 0;
         tempoMaxAnimacao = 0.02;
@@ -115,20 +117,62 @@ public class Main extends EngineFrame {
     public void update(double delta) {
 
         botaoImagem.update(delta);
-        botaoEmbaralhar.update(delta);
+        botaoComecar.update(delta);
         botaoBackTrack.update(delta);
+        botaoCancelar.update(delta);
 
         sliderAnimacao.update(delta);
-        sliderEmbaralhar.update(delta);
         sliderTamanho.update(delta);
+
+        botaoImagem.setBackgroundColor(new Color(70, 130, 180));
+        botaoComecar.setBackgroundColor(new Color(60, 179, 113));
+        botaoCancelar.setBackgroundColor(new Color(255, 193, 7));
+        botaoBackTrack.setBackgroundColor(new Color(220, 20, 60));
+
+        sliderAnimacao.setTrackFillColor(new Color(70, 130, 180));
+        sliderTamanho.setTrackFillColor(new Color(220, 20, 60));
+
+        botaoBackTrack.setTextColor(WHITE);
+        botaoComecar.setTextColor(WHITE);
+        botaoImagem.setTextColor(WHITE);
+        botaoCancelar.setTextColor(WHITE);
 
         tempoMaxAnimacao = 0.02 * sliderAnimacao.getValue();
 
+        if (botaoCancelar.isMousePressed()) {
+
+         
+            if (pecaMovendo != null) {
+                pecaMovendo.setPos(xFim, yFim);
+
+                grade[linhaDestino][colunaDestino] = pecaMovendo;
+                grade[linhaOrigem][colunaOrigem] = null;
+
+                pecaMovendo = null;
+            }
+
+            grade = gradeBackup;
+            contadorMovimentos = 0;
+
+            if (estadoJogo == EstadoJogo.Resolvendo && movimentosSolucao != null) {
+                movimentosSolucao.clear();
+            }
+
+            animando = false;
+
+            reiniciarJogo();
+            estadoJogo = EstadoJogo.Normal;
+        }
+
         if (estadoJogo == estadoJogo.Normal) {
 
-            botaoEmbaralhar.setEnabled(true);
+            botaoComecar.setEnabled(true);
             botaoImagem.setEnabled(true);
             botaoBackTrack.setEnabled(false);
+            botaoCancelar.setEnabled(false);
+
+            sliderAnimacao.setEnabled(true);
+            sliderTamanho.setEnabled(true);
 
             int novoTamanho = (int) sliderTamanho.getValue();
 
@@ -154,19 +198,22 @@ public class Main extends EngineFrame {
                             }
                         }
                     }
-                    
+
                 }
 
-            } else if (botaoEmbaralhar.isMousePressed()) {
+            } else if (botaoComecar.isMousePressed()) {
                 embaralhar();
                 estadoJogo = estadoJogo.Jogando;
             }
 
         } else if (estadoJogo == estadoJogo.Jogando) {
 
-            botaoEmbaralhar.setEnabled(true);
+            botaoComecar.setEnabled(false);
             botaoImagem.setEnabled(false);
             botaoBackTrack.setEnabled(true);
+            botaoCancelar.setEnabled(true);
+
+            sliderTamanho.setEnabled(false);
 
             if (botaoBackTrack.isMousePressed()) {
 
@@ -178,7 +225,8 @@ public class Main extends EngineFrame {
 
                     Peca[][] backup = copiarGrade(grade);
 
-                    resolver(visitados, new ArrayList<>());
+                    contadorMovimentos = 0;
+                    boolean resolveu = resolver(visitados, new ArrayList<>());
 
                     grade = backup;
                     recalcularPosicoes();
@@ -186,15 +234,15 @@ public class Main extends EngineFrame {
                     estadoJogo = EstadoJogo.Resolvendo;
 
                 } catch (StackOverflowError e) {
-                    System.out.println(e.toString());
-                    drawText(e.toString(), 15, 700, RED);
+                    System.out.println("Excede o limite de 8000 movimentos!!");
+
                 }
-            } else if (botaoEmbaralhar.isMousePressed()) {
+            } else if (botaoComecar.isMousePressed()) {
                 embaralhar();
             } else if (isMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
                 for (int i = 0; i < tamanho; i++) {
                     for (int j = 0; j < tamanho; j++) {
-                        if (grade[i][j] != null && grade[i][j].intercepta(getMouseX(), getMouseY()) ) {
+                        if (grade[i][j] != null && grade[i][j].intercepta(getMouseX(), getMouseY())) {
                             moverPecaAnimado(i, j);
                         }
                     }
@@ -203,8 +251,9 @@ public class Main extends EngineFrame {
 
         } else if (estadoJogo == EstadoJogo.Resolvendo) {
             botaoBackTrack.setEnabled(false);
-            botaoEmbaralhar.setEnabled(false);
+            botaoComecar.setEnabled(false);
             botaoImagem.setEnabled(false);
+            botaoCancelar.setEnabled(true);
         }
 
         if (animando && pecaMovendo != null) {
@@ -254,16 +303,23 @@ public class Main extends EngineFrame {
     @Override
     public void draw() {
 
-        clearBackground(WHITE);
+        clearBackground(new Color(30, 30, 40));
 
         botaoImagem.draw();
-        botaoEmbaralhar.draw();
+        botaoComecar.draw();
         botaoBackTrack.draw();
+        botaoCancelar.draw();
 
         sliderAnimacao.draw();
         sliderTamanho.draw();
-        sliderEmbaralhar.draw();
 
+        drawText("Tempo Animação", 48.5, 720, 12, WHITE);
+        drawText("Tamanho", 461, 720, 12, RAYWHITE);
+
+        drawText(String.valueOf((int) sliderAnimacao.getValue()), 97.5, 770, 12, RAYWHITE);
+        drawText(String.valueOf((int) sliderTamanho.getValue()), 482.5, 770, 12, RAYWHITE);
+
+        //System.out.println(measureText("Tamanho", 15));
         drawLine(0, 600, 600, 600, BLACK);
 
         for (int i = 0; i < tamanho; i++) {
@@ -280,7 +336,7 @@ public class Main extends EngineFrame {
 
         if (estadoJogo == EstadoJogo.Resolvendo) {
             int movimentosRestantes = movimentosSolucao.size() - indiceMovimento;
-            drawText(String.valueOf(movimentosRestantes), 15, 600, 20, RED);
+            drawText("Movimentos Restantes: " + String.valueOf(movimentosRestantes), 15, 610, 20, RED);
         }
 
     }
@@ -369,7 +425,7 @@ public class Main extends EngineFrame {
 
     private void embaralhar() {
 
-        int movimentos = (int) sliderEmbaralhar.getValue();
+        int movimentos = 15;
 
         int linVazio = tamanho - 1;
         int colVazio = tamanho - 1;
@@ -470,6 +526,10 @@ public class Main extends EngineFrame {
     }
 
     private boolean resolver(Set<String> visitados, List<int[]> caminho) {
+
+        if (contadorMovimentos > LIMITE_MOVIMENTOS) {
+            return false;
+        }
 
         if (estaResolvido()) {
             movimentosSolucao = new java.util.ArrayList<>(caminho);

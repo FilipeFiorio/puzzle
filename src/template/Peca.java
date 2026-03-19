@@ -43,7 +43,7 @@ public class Peca {
                 EngineFrame.BLACK
         );
 
-        e.drawText(String.valueOf(valor), pos.x + 10, pos.y + 10, 20, EngineFrame.WHITE);
+        //e.drawText(String.valueOf(valor), pos.x + 10, pos.y + 10, 20, EngineFrame.WHITE);
     }
 
     public boolean intercepta(int x, int y) {
