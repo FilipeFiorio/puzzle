@@ -48,6 +48,7 @@ public class Main extends EngineFrame {
     private int colunaDestino;
 
     private boolean animando;
+    private boolean mostrarErro;
 
     private EstadoJogo estadoJogo;
 
@@ -76,7 +77,7 @@ public class Main extends EngineFrame {
 
         //inicializando botoes
         botaoImagem = new GuiButton(15, 630, 180, 60, "Imagem");
-        botaoComecar = new GuiButton(205, 630, 180, 60, "Comecar");
+        botaoComecar = new GuiButton(205, 630, 180, 60, "Começar");
         botaoBackTrack = new GuiButton(395, 630, 180, 60, "Backtrack");
         botaoCancelar = new GuiButton(205, 700, 180, 60, "Cancelar");
         sliderAnimacao = new GuiSlider(
@@ -110,6 +111,7 @@ public class Main extends EngineFrame {
         tempoAnimacao = 0;
         tempoMaxAnimacao = 0.02;
         animando = false;
+        mostrarErro = false;
 
     }
 
@@ -159,6 +161,7 @@ public class Main extends EngineFrame {
             }
 
             animando = false;
+            mostrarErro = false;
 
             reiniciarJogo();
             estadoJogo = EstadoJogo.Normal;
@@ -218,8 +221,10 @@ public class Main extends EngineFrame {
             if (botaoBackTrack.isMousePressed()) {
 
                 Set<String> visitados = new HashSet<>();
+                mostrarErro = false;
 
                 try {
+                
                     movimentosSolucao = new ArrayList<>();
                     indiceMovimento = 0;
 
@@ -234,7 +239,8 @@ public class Main extends EngineFrame {
                     estadoJogo = EstadoJogo.Resolvendo;
 
                 } catch (StackOverflowError e) {
-                    System.out.println("Excede o limite de 8000 movimentos!!");
+                    mostrarErro = true;
+                    //System.out.println("Excede o limite movimentos!!");
 
                 }
             } else if (botaoComecar.isMousePressed()) {
@@ -337,6 +343,10 @@ public class Main extends EngineFrame {
         if (estadoJogo == EstadoJogo.Resolvendo) {
             int movimentosRestantes = movimentosSolucao.size() - indiceMovimento;
             drawText("Movimentos Restantes: " + String.valueOf(movimentosRestantes), 15, 610, 20, RED);
+        }
+        
+        if(mostrarErro) {
+            drawText("Limite de Movimentos Excedido!", 15, 610, 20, RED);
         }
 
     }
